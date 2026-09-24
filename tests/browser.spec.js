@@ -1,0 +1,56 @@
+import {test, expect} from '@playwright/test';
+test('desktop journey, points, math steps and globe',async({page})=>{
+ const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.goto('http://127.0.0.1:5173');
+ await expect(page.locator('h1')).toContainText('A little distance.');
+ await expect(page.locator('.globe path')).not.toHaveCount(0);
+ await page.locator('select').selectOption('A quarter of Earth');
+ await expect(page.getByTestId('distance')).toContainText('10,007.54');
+ await page.locator('select').selectOption('A local delivery');
+ const small=await page.getByTestId('distance').innerText();
+ expect(parseFloat(small)).toBeLessThan(4);
+ await page.getByRole('button',{name:'Place A',exact:true}).click();
+ const svg=page.locator('svg.globe'); const box=await svg.boundingBox();
+ await page.mouse.click(box.x+box.width*.45,box.y+box.height*.5);
+ await expect(page.getByRole('button',{name:'Click globe',exact:true})).toHaveAttribute('aria-pressed','true');
+ expect(await page.getByTestId('distance').innerText()).not.toEqual(small);
+ await page.getByRole('button',{name:'06 Multiply by Earth’s radius'}).click();
+ await expect(page.locator('.lesson h3')).toContainText('Turn that angle');
+ await page.getByRole('button',{name:'Reset points'}).click();
+ await page.screenshot({path:'/tmp/arc-desktop.png',fullPage:true});
+ expect(errors).toEqual([]);
+});
+test('mobile layout fits and keyboard fields update',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});
+ await page.goto('http://127.0.0.1:5173');
+ await page.locator('select').selectOption('A quarter of Earth');
+ await page.getByLabel('Destination Longitude',{exact:true}).fill('0');
+ await expect(page.getByTestId('distance')).toContainText('0 km');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ await page.screenshot({path:'/tmp/arc-mobile.png',fullPage:true});
+});
+test('zoom controls, wheel and point placement stay aligned',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.goto('http://127.0.0.1:5173');
+ await expect(page.getByRole('button',{name:'Zoom out',exact:true})).toBeDisabled();
+ const before=await page.getByTestId('distance').innerText();
+ await page.getByRole('button',{name:'Zoom in',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Reset zoom',exact:true})).toHaveText('1.4×');
+ expect(await page.getByTestId('distance').innerText()).toBe(before);
+ await page.locator('svg.globe').hover();
+ await page.mouse.wheel(0,-350);
+ await expect(page.getByRole('button',{name:'Reset zoom',exact:true})).not.toHaveText('1.4×');
+ await page.getByRole('button',{name:'Place A',exact:true}).click();
+ const center=await page.locator('svg.globe').evaluate(el=>{
+   const p=new DOMPoint(360,300).matrixTransform(el.getScreenCTM());return {x:p.x,y:p.y};
+ });
+ await page.mouse.click(center.x,center.y);
+ await expect(page.getByLabel('Origin Latitude',{exact:true})).toHaveValue('30');
+ await expect(page.getByLabel('Origin Longitude',{exact:true})).toHaveValue('0');
+ await page.getByRole('button',{name:'Reset zoom',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Reset zoom',exact:true})).toHaveText('1.0×');
+ await page.setViewportSize({width:390,height:844});
+ await page.getByRole('button',{name:'Zoom in',exact:true}).click();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
